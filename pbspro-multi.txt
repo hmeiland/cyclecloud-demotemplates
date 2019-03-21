@@ -1,0 +1,296 @@
+
+################################
+## Cluster Configuration File ##
+################################
+
+[cluster PBSPro-multi]
+FormLayout = selectionpanel
+Category = Schedulers
+
+Autoscale = True 
+cyclecloud.cluster.autoscale.use_node_groups = true
+
+    [[node defaults]]
+    UsePublicNetwork = $UsePublicNetwork
+    Credentials = $Credentials    
+    ImageName = $ImageName
+    SubnetId = $SubnetId
+    Region = $Region
+    KeyPairLocation = ~/.ssh/cyclecloud.pem
+    Interruptible = false
+    
+        [[[configuration]]]
+        
+
+        [[[cluster-init pbspro:default:1.2.0]]]
+        Optional = true
+
+    [[node master]]
+    MachineType = $MasterMachineType
+    IsReturnProxy = $ReturnProxy
+    AdditionalClusterInitSpecs = $MasterClusterInitSpecs
+    
+        [[[configuration]]]
+
+        [[[cluster-init pbspro:master:1.2.0]]]
+
+        [[[network-interface eth0]]]
+        AssociatePublicIpAddress = $UsePublicNetwork
+
+        [[[input-endpoint ganglia]]]
+        PrivatePort = 8652
+        PublicPort = 8652
+
+    [[node login]]
+    MachineType = $LoginMachineType
+    ImageName = $LoginImageName
+        
+	[[[cluster-init pbspro:login:1.2.0]]]
+
+    [[nodearray executedefaults]]
+    Abstract = True
+    MachineType = $ExecuteMachineType
+    AdditionalClusterInitSpecs = $ExecuteClusterInitSpecs
+
+
+        [[[configuration]]]
+
+        [[[cluster-init pbspro:execute:1.2.0]]]
+
+        [[[network-interface eth0]]]
+        AssociatePublicIpAddress = $ExecuteNodesPublic
+
+    [[nodearray execute]]
+    Extends = executedefaults
+    MaxCoreCount = $MaxExecuteCoreCount
+    ImageName = $ExecuteImageName
+
+    [[nodearray execute_lowprio]]
+    Extends = executedefaults
+    MaxCoreCount = $MaxExecuteCoreCount
+    ImageName = $ExecuteImageName
+    Interruptible = true
+
+    [[[configuration]]]
+    pbspro.slot_type = execute_lowprio
+
+    [[nodearray highmem]]
+    Extends = executedefaults
+    MachineType = Standard_G5
+    MaxCoreCount = $MaxHighmemCoreCount
+    ImageName = $HighmemImageName
+
+    [[[configuration]]]
+    pbspro.slot_type = highmem
+
+    [[nodearray highmem_lowprio]]
+    Extends = executedefaults
+    MachineType = Standard_G5
+    MaxCoreCount = $MaxHighmemCoreCount
+    ImageName = $HighmemImageName
+    Interruptible = true
+
+    [[[configuration]]]
+    pbspro.slot_type = highmem_lowprio
+
+    [[nodearray light]]
+    Extends = executedefaults
+    MachineType = Standard_E4_v3
+    MaxCoreCount = $MaxLightCoreCount
+    ImageName = $LightImageName
+
+    [[[configuration]]]
+    pbspro.slot_type = light
+
+    [[nodearray light_lowprio]]
+    Extends = executedefaults
+    MachineType = Standard_E4_v3
+    MaxCoreCount = $MaxLightCoreCount
+    ImageName = $LightImageName
+    Interruptible = true
+
+    [[[configuration]]]
+    pbspro.slot_type = light_lowprio
+
+[parameters About]
+Order = 1
+
+    [[parameters About PBSPro]]
+
+        [[[parameter pbspro]]]
+        HideLabel = true
+        Config.Plugin = pico.widget.HtmlTemplateWidget
+        Config.Template := "<table><tr><td><p>PBSPro is a highly configurable open source workload manager. See the <a href=\"http://www.pbspro.org/\" target=\"_blank\">PBSPro project site</a> for an overview.</p></td></tr></table>"
+
+[parameters Required Settings]
+Order = 10
+
+    [[parameters Standard Machines ]]
+    Description = "The cluster, in this case, has two roles: the scheduler master-node with shared filer and the execute hosts. Configure which VM types to use based on the requirements of your application."
+    Order = 20
+
+        [[[parameter Region]]]
+        Label = Region
+        Description = Deployment Location
+        ParameterType = Cloud.Region
+        DefaultValue = westus2
+
+        [[[parameter SubnetId]]]
+        Label = Subnet ID
+        Description = Subnet Resource Path (ResourceGroup/VirtualNetwork/Subnet)
+        ParameterType = Azure.Subnet
+        Required = True
+
+        [[[parameter MasterMachineType]]]
+        Label = Master VM Type
+        Description = The VM type for scheduler master and shared filer.
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_D12_v2
+        Config.Multiselect = true
+        
+	[[[parameter LoginMachineType]]]
+        Label = Login VM Type
+        Description = The VM type for scheduler master and shared filer.
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_D12_v2
+        Config.Multiselect = true
+
+        [[[parameter LoginImageName]]]
+        Label = Base OS
+        ParameterType = Cloud.Image
+        Config.OS = linux
+        DefaultValue = cycle.image.centos7
+        Config.Filter := Package === "cycle.image.centos7"
+
+
+    [[parameters Execute nodes]]
+    Description = "The cluster can autoscale to the workload, adding execute hosts as jobs are queued. To enable this check the box below and choose the initial and maximum core counts for the cluster"
+    Order = 30
+
+        [[[parameter ExecuteMachineType]]]
+        Label = Execute VM Type
+        Description = The VM type for execute nodes
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_H16r
+        Config.Multiselect = true
+
+        [[[parameter ExecuteImageName]]]
+        Label = Base OS
+        ParameterType = Cloud.Image
+        Config.OS = linux
+        DefaultValue = cycle.image.centos7
+        Config.Filter := Package === "cycle.image.centos7"
+
+        [[[parameter MaxExecuteCoreCount]]]
+        Label = Max Cores
+        Description = The total number of execute cores to start
+        DefaultValue = 100
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 1
+        Config.IntegerOnly = true
+
+        [[[parameter LightMachineType]]]
+        Label = Light VM Type
+        Description = The VM type for execute nodes
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_F2s_v2
+        Config.Multiselect = true
+
+        [[[parameter LightImageName]]]
+        Label = Base OS
+        ParameterType = Cloud.Image
+        Config.OS = linux
+        DefaultValue = cycle.image.centos7
+        Config.Filter := Package === "cycle.image.centos7"
+
+        [[[parameter MaxLightCoreCount]]]
+        Label = Max Cores
+        Description = The total number of execute cores to start
+        DefaultValue = 100
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 1
+        Config.IntegerOnly = true
+
+        [[[parameter HighmemMachineType]]]
+        Label = Highmem VM Type
+        Description = The VM type for execute nodes
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_G5
+        Config.Multiselect = true
+
+        [[[parameter HighmemImageName]]]
+        Label = Base OS
+        ParameterType = Cloud.Image
+        Config.OS = linux
+        DefaultValue = cycle.image.centos7
+        Config.Filter := Package === "cycle.image.centos7"
+
+        [[[parameter MaxHighmemCoreCount]]]
+        Label = Max Cores
+        Description = The total number of execute cores to start
+        DefaultValue = 100
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 1
+        Config.IntegerOnly = true
+
+[parameters Advanced Settings]
+Order = 20
+
+    [[parameters Azure Settings]]
+    Order = 10 
+
+        [[[parameter Credentials]]]
+        Description = The credentials for the cloud provider
+        ParameterType = Cloud.Credentials
+
+    [[parameters PBSPro Settings ]]
+    Description = "Section for configuring PBSPro"
+    Order = 5
+
+        
+
+    [[parameters Software]]
+    Description = "Specify the scheduling software, and base OS installed on all nodes, and optionally the cluster-init and chef versions from your Locker."
+    Order = 10
+
+        [[[parameter ImageName]]]
+        Label = Base OS
+        ParameterType = Cloud.Image
+        Config.OS = linux
+        DefaultValue = cycle.image.centos7
+        Config.Filter := Package === "cycle.image.centos7"
+
+        [[[parameter MasterClusterInitSpecs]]]
+        Label = Master Cluster-Init
+        DefaultValue = =undefined
+        Description = Cluster init specs to apply to the master node
+        ParameterType = Cloud.ClusterInitSpecs
+    
+        [[[parameter ExecuteClusterInitSpecs]]]
+        Label = Execute Cluster-Init
+        DefaultValue = =undefined
+        Description = Cluster init specs to apply to execute nodes
+        ParameterType = Cloud.ClusterInitSpecs
+	
+
+    [[parameters Advanced Networking]]
+    Description = Advanced networking settings
+
+        [[[parameter ReturnProxy]]]
+        Label = Return Proxy
+        DefaultValue = true
+        ParameterType = Boolean
+        Config.Label = Use SSH tunnel to connect to CycleCloud (required if direct access is blocked)
+
+        [[[parameter UsePublicNetwork]]]
+        Label = Public Head Node
+        DefaultValue = true
+        ParameterType = Boolean
+        Config.Label = Access master node from the Internet
+
+        [[[parameter ExecuteNodesPublic]]]
+        Label = Public Execute
+        DefaultValue = false
+        ParameterType = Boolean
+        Config.Label = Access execute nodes from the Internet
+        Conditions.Excluded := UsePublicNetwork isnt true
