@@ -3,10 +3,12 @@
 import argparse
 
 parser = argparse.ArgumentParser(description='Make custom Cyclecloud template.')
-parser.add_argument('--name', nargs='?', required=True, default='mycluster',
-                    help='name of the template, creates <name>.txt file  (default: mycluster)')
+parser.add_argument('--name', nargs='?', required=True,
+                    help='name of the template, creates <name>.txt file')
 parser.add_argument('--scheduler', nargs='?', default='pbspro',
-                    help='select the Batch Scheduler (default: PBSPro)')
+                    help='select the job scheduler pbspro(default),gridengine,slurm')
+parser.add_argument('--array', nargs='+', default='execute',
+                    help='specify the excute node arrays to create (default: execute)')
 parser.add_argument('--nfs', nargs='?',
                     help='create a NFS mount')
 
@@ -23,39 +25,68 @@ template += """
     ImageName = $ImageName
     SubnetId = $SubnetId
     Region = $Region
-    KeyPairLocation = ~/.ssh/cyclecloud.pem\n"""
+    KeyPairLocation = ~/.ssh/cyclecloud.pem
+"""
 template += """
     [[node master]]
     MachineType = $MasterMachineType
     IsReturnProxy = $ReturnProxy
     AdditionalClusterInitSpecs = $MasterClusterInitSpecs
-
         [[[configuration]]]
+"""
+if args.scheduler == "pbspro":
+    template += "        [[[cluster-init cyclecloud/pbspro:master]]]\n"
+if args.scheduler == "gridengine":
+    template += "        [[[cluster-init cyclecloud/gridengine:master]]]\n"
 
-        [[[cluster-init cyclecloud/pbspro:master]]]
-
+template += """
         [[[network-interface eth0]]]
         AssociatePublicIpAddress = $UsePublicNetwork
 
         [[[input-endpoint ganglia]]]
         PrivatePort = 8652
-        PublicPort = 8652"""
-template += """
-[parameters About]
-Order = 1
-
-    [[parameters About myfirstproject]]
-
-        [[[parameter myfirstproject]]]
-        HideLabel = true
-        Config.Plugin = pico.widget.HtmlTemplateWidget
-        Config.Template = '''<p>Insert template description here</p>'''
+        PublicPort = 8652
 """
 template += """
-[parameters Required Settings]
-Order = 10
+    [[nodearray execute]]
+    MachineType = $ExecuteMachineType
+    MaxCoreCount = $MaxExecuteCoreCount
+    Interruptible = $UseLowPrio
+    AdditionalClusterInitSpecs = $ExecuteClusterInitSpecs
+        [[[configuration]]]
+"""
 
-    [[parameters Virtual Machines ]]
+if args.scheduler == "pbspro":
+    template += "        [[[cluster-init cyclecloud/pbspro:execute]]]\n"
+if args.scheduler == "gridengine":
+    template += "        [[[cluster-init cyclecloud/gridengine:execute]]]\n"
+
+template += """
+        [[[network-interface eth0]]]
+        AssociatePublicIpAddress = $ExecuteNodesPublic
+"""
+
+if args.array == "execute":
+    pass 
+else:
+    for array in args.array:
+        template += "\n# specified array {}\n".format(array)
+        template += "    [[nodearray {}]]".format(array)
+	template += """
+    Extends = execute
+    [[[configuration]]]\n"""
+        if args.scheduler == "pbspro":
+            template += "    pbspro.slot_type = {}\n".format(array) 
+
+template += """
+[parameters Required Settings]
+Order = 1
+
+    [[parameters Template Description]]
+    Description = "This this cluster is set up to use the {} scheduler"
+    Order = 10
+
+    [[parameters Location and network ]]
     Description = "The cluster, in this case, has two roles: the scheduler master-node with shared filer and the execute hosts. Configure which VM types to use based on the requirements of your application."
     Order = 20
 
@@ -64,6 +95,20 @@ Order = 10
         Description = Deployment Location
         ParameterType = Cloud.Region
         DefaultValue = westus2
+
+        [[[parameter SubnetId]]]
+        Label = Subnet ID
+        Description = Subnet Resource Path (ResourceGroup/VirtualNetwork/Subnet)
+        ParameterType = Azure.Subnet
+        Required = True
+"""
+template += """
+[parameters Node Settings]
+Order = 20
+
+    [[parameters Virtual Machines ]]
+    Description = "The cluster, in this case, has two roles: the scheduler master-node with shared filer and the execute hosts. Configure which VM types to use based on the requirements of your application."
+    Order = 20
 
         [[[parameter MasterMachineType]]]
         Label = Master VM Type
@@ -78,6 +123,31 @@ Order = 10
         DefaultValue = Standard_F2s_v2
         Config.Multiselect = true
 """
+template += """
+    [[parameters Software]]
+    Description = "Specify the scheduling software, and base OS installed on all nodes, and optionally the cluster-init and chef versions from your Locker."
+    Order = 10                                                                                                                         
+
+        [[[parameter ImageName]]]
+        Label = Base OS
+        ParameterType = Cloud.Image
+        Config.OS = linux
+        DefaultValue = cycle.image.centos7
+        Config.Filter := Package === "cycle.image.centos7"
+
+        [[[parameter MasterClusterInitSpecs]]]
+        Label = Master Cluster-Init
+        DefaultValue = =undefined
+        Description = Cluster init specs to apply to the master node
+        ParameterType = Cloud.ClusterInitSpecs
+
+        [[[parameter ExecuteClusterInitSpecs]]]
+        Label = Execute Cluster-Init
+        DefaultValue = =undefined
+        Description = Cluster init specs to apply to execute nodes
+        ParameterType = Cloud.ClusterInitSpecs
+"""
+
 template += """
     [[parameters Auto-Scaling]]
     Description = "The cluster can autoscale to the workload, adding execute hosts as jobs are queued. To enable this check the box below and choose the initial and maximum core counts for the cluster"
@@ -102,54 +172,17 @@ template += """
         DefaultValue = false
         Widget.Plugin = pico.form.BooleanCheckBox
         Widget.Label = Use low priority instances for execute hosts
-
-    [[parameters Networking]]
-    Order = 40
-
-        [[[parameter SubnetId]]]
-        Label = Subnet ID
-        Description = Subnet Resource Path (ResourceGroup/VirtualNetwork/Subnet)
-        ParameterType = Azure.Subnet
-        Required = True
 """
 template += """
 [parameters Advanced Settings]
 Order = 20
 
-    [[parameters Azure Settings]]
+    [[parameters Subscription Settings]]
     Order = 10
 
         [[[parameter Credentials]]]
         Description = The credentials for the cloud provider
         ParameterType = Cloud.Credentials
-
-    [[parameters myfirstproject Settings ]]
-    Description = "Section for configuring myfirstproject"
-    Order = 5
-"""
-template += """
-    [[parameters Software]]
-    Description = "Specify the scheduling software, and base OS installed on all nodes, and optionally the cluster-init and chef versions from your Locker."
-    Order = 10
-
-        [[[parameter ImageName]]]
-        Label = Base OS
-        ParameterType = Cloud.Image
-        Config.OS = linux
-        DefaultValue = cycle.image.centos7
-        Config.Filter := Package === "cycle.image.centos7"
-
-        [[[parameter MasterClusterInitSpecs]]]
-        Label = Master Cluster-Init
-        DefaultValue = =undefined
-        Description = Cluster init specs to apply to the master node
-        ParameterType = Cloud.ClusterInitSpecs
-
-        [[[parameter ExecuteClusterInitSpecs]]]
-        Label = Execute Cluster-Init
-        DefaultValue = =undefined
-        Description = Cluster init specs to apply to execute nodes
-        ParameterType = Cloud.ClusterInitSpecs
 """
 template += """
     [[parameters Advanced Networking]]
