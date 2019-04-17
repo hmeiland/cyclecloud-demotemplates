@@ -9,8 +9,8 @@ parser.add_argument('--scheduler', nargs='?', default='pbspro',
                     help='select the job scheduler pbspro(default),gridengine,slurm')
 parser.add_argument('--array', nargs='+', default='execute',
                     help='specify the excute node arrays to create (default: execute)')
-parser.add_argument('--nfs', nargs='?',
-                    help='create a NFS mount')
+parser.add_argument('--nfs', nargs='?', help='connect to NFS export from CycleCloud NFS filer')
+parser.add_argument('--anf', nargs='?', help='connect to ANF export from Azure')
 
 args = parser.parse_args()
 #print args.name
@@ -27,6 +27,24 @@ template += """
     Region = $Region
     KeyPairLocation = ~/.ssh/cyclecloud.pem
 """
+if args.nfs:
+  template += """
+        [[[configuration cyclecloud.mounts.other_cluster_fs]]]
+        type = nfs
+        mountpoint = $NFSMountPoint
+        export_path = /mnt/exports/data
+        cluster_name = $NFSServerName
+  """
+
+if args.anf:
+  template += """
+        [[[configuration cyclecloud.mounts.anf]]]
+        type = nfs
+        mountpoint = $ANFMountPoint
+        export_path = $ANFExport
+        address = $ANFServerName
+"""
+
 template += """
     [[node master]]
     MachineType = $MasterMachineType
@@ -213,6 +231,57 @@ template += """
         Config.Label = Access execute nodes from the Internet
         Conditions.Excluded := UsePublicNetwork isnt true
 """
+if args.nfs or args.anf:
+  template += """
+[parameters External Filesystems]
+Order = 30
+"""
+
+if args.nfs:
+  template += """
+    [[parameters NFS Settings]]
+    Order = 26
+    Description = "Use a NFS server as a NAS. Settings for defining the NFS"
+
+        [[[parameter NFSServerName]]]
+        Label = NFS server
+        Description = Name of the NFS server to connect to. The NFS server should be orchestrated by the same CycleCloud Server
+        Required = True
+        Config.Plugin = pico.form.QueryDropdown
+        Config.Query = select ClusterName as Name from Cloud.Node where Cluster().IsTemplate =!= True && ClusterInitSpecs["nfs:default"] isnt undefined
+        Config.SetDefault = false
+
+        [[[parameter NFSMountPoint]]]
+        Label = NFS MountPoint
+        Description = The mount point to mount the NFS file server on.
+        DefaultValue = /nfsdata
+        Required = True
+"""
+if args.anf:
+  template += """
+    [[parameters ANF Settings]]
+    Order = 28
+    Description = "Use a ANF server as a NAS. Settings for defining the ANF"
+
+        [[[parameter ANFServerName]]]
+        Label = ANF Server name or IP address
+        Description = The ANF server name or ip address.
+        DefaultValue = 10.1.3.4
+        Required = True
+
+        [[[parameter ANFExport]]]
+        Label = ANF Export
+        Description = The export on the ANF.
+        DefaultValue = /netappdata
+        Required = True
+
+        [[[parameter ANFMountPoint]]]
+        Label = ANF MountPoint
+        Description = The mount point to mount the ANF file server on.
+        DefaultValue = /netappdata
+        Required = True
+"""
+
 filename = '{}.txt'.format(args.name)
 f = open( filename, 'w' )
 f.write( template )
