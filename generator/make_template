@@ -38,6 +38,8 @@ if args.scheduler == "pbspro":
     template += "        [[[cluster-init cyclecloud/pbspro:master]]]\n"
 if args.scheduler == "gridengine":
     template += "        [[[cluster-init cyclecloud/gridengine:master]]]\n"
+if args.scheduler == "slurm":
+    template += "        [[[cluster-init cyclecloud/slurm:master]]]\n"
 
 template += """
         [[[network-interface eth0]]]
@@ -60,6 +62,8 @@ if args.scheduler == "pbspro":
     template += "        [[[cluster-init cyclecloud/pbspro:execute]]]\n"
 if args.scheduler == "gridengine":
     template += "        [[[cluster-init cyclecloud/gridengine:execute]]]\n"
+if args.scheduler == "slurm":
+    template += "        [[[cluster-init cyclecloud/slurm:execute]]]\n"
 
 template += """
         [[[network-interface eth0]]]
@@ -83,7 +87,9 @@ template += """
 Order = 1
 
     [[parameters Template Description]]
-    Description = "This this cluster is set up to use the {} scheduler"
+"""
+template += "    Description = \"This this cluster is set up to use the {} scheduler\"\n".format(args.scheduler)
+template += """
     Order = 10
 
     [[parameters Location and network ]]
