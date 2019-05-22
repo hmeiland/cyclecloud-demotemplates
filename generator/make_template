@@ -27,6 +27,12 @@ template += """
     Region = $Region
     KeyPairLocation = ~/.ssh/cyclecloud.pem
 """
+if args.scheduler == "slurm":
+    template += """
+	[[[configuration]]]
+	slurm.version = $configuration_slurm_version
+        [[[cluster-init cyclecloud/slurm:default]]]
+  """
 if args.nfs:
   template += """
         [[[configuration cyclecloud.mounts.other_cluster_fs]]]
@@ -281,6 +287,18 @@ if args.anf:
         DefaultValue = /netappdata
         Required = True
 """
+if args.scheduler == "slurm":
+    template += """
+   [[parameters Slurm Settings]]
+   Order = 40
+   Description = "Settings specific to Slurm"
+
+	[[[parameter configuration_slurm_version]]]
+	required = True
+	label = Slurm Version
+	description = Version of Slurm to install on the cluster
+	defaultvalue = 17.11.12-1
+  """
 
 filename = '{}.txt'.format(args.name)
 f = open( filename, 'w' )
