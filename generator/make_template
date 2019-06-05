@@ -11,6 +11,7 @@ parser.add_argument('--array', nargs='+', default='execute',
                     help='specify the excute node arrays to create (default: execute)')
 parser.add_argument('--nfs', nargs='?', help='connect to NFS export from CycleCloud NFS filer')
 parser.add_argument('--anf', nargs='?', help='connect to ANF export from Azure')
+parser.add_argument('--lustre', nargs='?', help='connect to ANF export from Azure')
 
 args = parser.parse_args()
 #print args.name
@@ -49,6 +50,19 @@ if args.anf:
         mountpoint = $ANFMountPoint
         export_path = $ANFExport
         address = $ANFServerName
+"""
+
+if args.lustre:
+  template += """
+        [[[cluster-init lustre:default:1.0.0]]]
+        Optional = True
+        [[[cluster-init lustre:client:1.0.0]]]
+        Optional = True
+
+        [[[configuration]]]
+        lustre.client.cluster_name = $LustreClusterName
+        lustre.client.mount_point = $LustreMountPoint
+
 """
 
 template += """
@@ -237,7 +251,7 @@ template += """
         Config.Label = Access execute nodes from the Internet
         Conditions.Excluded := UsePublicNetwork isnt true
 """
-if args.nfs or args.anf:
+if args.nfs or args.anf or arg.lustre:
   template += """
 [parameters External Filesystems]
 Order = 30
@@ -286,6 +300,27 @@ if args.anf:
         Description = The mount point to mount the ANF file server on.
         DefaultValue = /netappdata
         Required = True
+"""
+if args.lustre:
+  template += """
+    [[parameters Lustre Settings]]
+    Order = 28
+    Description = "Use a Lustre cluster as a PFS. Settings for defining the Lustre cluster"
+
+        [[[parameter LustreClusterName]]]
+        Label = Lustre Cluster
+        Description = Name of the Lustre cluster to connect to.
+        Required = True
+        Config.Plugin = pico.form.QueryDropdown
+        Config.Query = select ClusterName as Name from Cloud.Node where Cluster().IsTemplate =!= True && ClusterInitSpecs["lustre:mds"] isnt undefined
+        Config.SetDefault = false                                                                                    
+
+        [[[parameter LustreMountPoint]]]
+        Label = Lustre MountPoint
+        Description = The mount point to mount the Lustre file server on.
+        DefaultValue = /lustre
+        Required = True
+
 """
 if args.scheduler == "slurm":
     template += """
