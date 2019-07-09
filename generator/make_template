@@ -9,12 +9,14 @@ parser.add_argument('--scheduler', nargs='?', default='pbspro',
                     help='select the job scheduler pbspro(default),gridengine,slurm')
 parser.add_argument('--array', nargs='+', default='execute',
                     help='specify the excute node arrays to create (default: execute)')
-parser.add_argument('--nfs', nargs='?', help='connect to NFS export from CycleCloud NFS filer')
+parser.add_argument('--nfs', nargs='+', help='connect to NFS export from CycleCloud NFS filer')
 parser.add_argument('--anf', nargs='?', help='connect to ANF export from Azure')
 parser.add_argument('--lustre', nargs='?', help='connect to ANF export from Azure')
+parser.add_argument('--hpcbb', nargs='?', help='configure HPCBB alike cluster features')
 
 args = parser.parse_args()
-#print args.name
+#print args
+
 
 template = """# template generated with template generator #\n\n"""
 template += """[cluster {}]\n""".format(args.name)
@@ -27,6 +29,8 @@ template += """
     SubnetId = $SubnetId
     Region = $Region
     KeyPairLocation = ~/.ssh/cyclecloud.pem
+	[[[configuration]]]
+    	cyclecloud.selinux.policy = permissive
 """
 if args.scheduler == "slurm":
     template += """
@@ -72,6 +76,10 @@ template += """
     AdditionalClusterInitSpecs = $MasterClusterInitSpecs
         [[[configuration]]]
 """
+
+if args.hpcbb == "true" :
+    template += "        [[[cluster-init hpcbb:master]]]\n"
+
 if args.scheduler == "pbspro":
     template += "        [[[cluster-init cyclecloud/pbspro:master]]]\n"
 if args.scheduler == "gridengine":
@@ -95,6 +103,9 @@ template += """
     AdditionalClusterInitSpecs = $ExecuteClusterInitSpecs
         [[[configuration]]]
 """
+
+if args.hpcbb == "true" :
+    template += "        [[[cluster-init hpcbb:execute]]]\n"
 
 if args.scheduler == "pbspro":
     template += "        [[[cluster-init cyclecloud/pbspro:execute]]]\n"
@@ -251,7 +262,7 @@ template += """
         Config.Label = Access execute nodes from the Internet
         Conditions.Excluded := UsePublicNetwork isnt true
 """
-if args.nfs or args.anf or arg.lustre:
+if args.nfs or args.anf or args.lustre:
   template += """
 [parameters External Filesystems]
 Order = 30
