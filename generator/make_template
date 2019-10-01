@@ -6,24 +6,24 @@ parser = argparse.ArgumentParser(description='Make custom Cyclecloud template.')
 parser.add_argument('--name', nargs='?', required=True,
                     help='name of the template, creates <name>.txt file')
 parser.add_argument('--scheduler', nargs='?', default='pbspro',
-                    help='select the job scheduler pbspro(default),gridengine,slurm')
+                    help='select the job scheduler pbspro(default),gridengine,slurm,lsf')
 parser.add_argument('--array', nargs='+', default='execute',
                     help='specify the excute node arrays to create (default: execute)')
 parser.add_argument('--nfs', nargs='+', help='connect to NFS export from CycleCloud NFS filer')
-parser.add_argument('--anf', nargs='?', help='connect to ANF export from Azure')
-parser.add_argument('--lustre', nargs='?', help='connect to ANF export from Azure')
+parser.add_argument('--anf', nargs='+', help='connect to ANF export from Azure')
+parser.add_argument('--lustre', nargs='?', help='connect to CycleCloud Lustre cluster')
 parser.add_argument('--hpcbb', nargs='?', help='configure HPCBB alike cluster features')
 
 args = parser.parse_args()
 #print args
 
 
-template = """# template generated with template generator #\n\n"""
+template = """# template generated with template generator #\n"""
+template += """# created with these arguments:\n# {}\n\n""".format(args)
 template += """[cluster {}]\n""".format(args.name)
 template += """FormLayout = selectionpanel\nCategory = My Clusters\nCategoryOrder=1\nAutoscale = $Autoscale\n"""
 template += """
     [[node defaults]]
-    UsePublicNetwork = $UsePublicNetwork
     Credentials = $Credentials
     ImageName = $ImageName
     SubnetId = $SubnetId
@@ -31,12 +31,32 @@ template += """
     KeyPairLocation = ~/.ssh/cyclecloud.pem
 	[[[configuration]]]
     	cyclecloud.selinux.policy = permissive
+        cyclecloud.maintenance_converge.enabled = false
 """
 if args.scheduler == "slurm":
     template += """
 	[[[configuration]]]
 	slurm.version = $configuration_slurm_version
         [[[cluster-init cyclecloud/slurm:default]]]
+  """
+if args.scheduler == "lsf":
+    template += """
+	cyclecloud.mounts.sched.disabled = true
+        cyclecloud.mounts.shared.disabled = true
+        cshared.server.legacy_links_disabled = true
+        cuser.base_home_dir = /shared/home
+
+        cyclecloud.exports.shared.samba.enabled = false
+        cyclecloud.exports.defaults.samba.enabled = false
+
+        lsf.lsf_top = /usr/share/lsf
+        lsf.lsf_logdir = /usr/share/lsf/log
+        lsf.admin.home = /shared/home/lsfadmin
+        lsf.entitled_install = true
+        lsf.use_entitlement = true
+        lsf.accept_license = true
+        lsf.entitlement_file = lsf_std_entitlement.dat
+	[[[cluster-init lsf:default:$LsfProjectVersion]]]
   """
 if args.nfs:
   template += """
@@ -46,15 +66,17 @@ if args.nfs:
         export_path = /mnt/exports/data
         cluster_name = $NFSServerName
   """
-
+#print len(args.anf)
 if args.anf:
-  template += """
-        [[[configuration cyclecloud.mounts.anf]]]
+  for anf in args.anf:
+    #print(anf)
+    template += """
+        [[[configuration cyclecloud.mounts.anf{}]]]
         type = nfs
-        mountpoint = $ANFMountPoint
-        export_path = $ANFExport
-        address = $ANFServerName
-"""
+        mountpoint = $ANFMountPoint{}
+        export_path = $ANFExport{}
+        address = $ANFServerName{}
+""".format(anf,anf,anf,anf)
 
 if args.lustre:
   template += """
@@ -69,14 +91,28 @@ if args.lustre:
 
 """
 
-template += """
+if args.scheduler != "lsf":
+    template += """
     [[node master]]
     MachineType = $MasterMachineType
-    IsReturnProxy = $ReturnProxy
+    #IsReturnProxy = $ReturnProxy
+    UsePublicNetwork = false 
     AdditionalClusterInitSpecs = $MasterClusterInitSpecs
         [[[configuration]]]
 """
+if args.scheduler == "lsf":
+    template += """
+    [[nodearray master]]
+    MachineType = $MasterMachineType
+    InitialCount = $MasterNodeCountHA
+    AdditionalClusterInitSpecs = $MasterClusterInitSpecs
 
+    [[[configuration]]]
+    run_list = recipe[cyclecloud],recipe[cshared::client],recipe[cuser],recipe[cganglia::client],recipe[lsf::install],recipe[lsf::master]
+    cshared.server.shared_dir = /shared
+    cyclecloud.discoverable = true
+    [[[cluster-init lsf:master:$LsfProjectVersion]]]
+"""
 if args.hpcbb == "true" :
     template += "        [[[cluster-init hpcbb:master]]]\n"
 
@@ -88,13 +124,37 @@ if args.scheduler == "slurm":
     template += "        [[[cluster-init cyclecloud/slurm:master]]]\n"
 
 template += """
+        #[[[network-interface eth0]]]
+        #AssociatePublicIpAddress = $UsePublicNetwork
+
+        #[[[input-endpoint ganglia]]]
+        #PrivatePort = 8652
+        #PublicPort = 8652
+"""
+if args.scheduler == "lsf":
+    template += """
+[[node proxy]]
+        IsReturnProxy = $ReturnProxy
+        MachineType = $MasterMachineType
+    	UsePublicNetwork = $UsePublicNetwork
+
+        [[[configuration]]]
+        run_list =  recipe[cganglia::server]
+        cyclecloud.discoverable = true
+        cuser.base_home_dir = /home
+
         [[[network-interface eth0]]]
-        AssociatePublicIpAddress = $UsePublicNetwork
+        AssociatePublicIpAddress = $ReturnProxy
 
         [[[input-endpoint ganglia]]]
         PrivatePort = 8652
         PublicPort = 8652
+
+        [[[input-endpoint SSH]]]
+        PrivatePort = 22
+        PublicPort = 22
 """
+
 template += """
     [[nodearray execute]]
     MachineType = $ExecuteMachineType
@@ -102,6 +162,14 @@ template += """
     Interruptible = $UseLowPrio
     AdditionalClusterInitSpecs = $ExecuteClusterInitSpecs
         [[[configuration]]]
+        cyclecloud.maintenance_converge.enabled = false
+"""
+if args.scheduler == "lsf":
+    template += """
+        run_list = recipe[cyclecloud],recipe[cshared::client],recipe[cuser],recipe[cganglia::client],recipe[lsf::default]
+        lsf.attribute_names = nodearray
+        lsf.attributes.nodearray = execute 
+        lsf.autoscale = true
 """
 
 if args.hpcbb == "true" :
@@ -113,6 +181,8 @@ if args.scheduler == "gridengine":
     template += "        [[[cluster-init cyclecloud/gridengine:execute]]]\n"
 if args.scheduler == "slurm":
     template += "        [[[cluster-init cyclecloud/slurm:execute]]]\n"
+if args.scheduler == "lsf":
+    template += "        [[[cluster-init lsf:execute:$LsfProjectVersion]]]\n"
 
 template += """
         [[[network-interface eth0]]]
@@ -130,6 +200,9 @@ else:
     [[[configuration]]]\n"""
         if args.scheduler == "pbspro":
             template += "    pbspro.slot_type = {}\n".format(array) 
+        if args.scheduler == "lsf":
+            template += "    lsf.attribute_names = nodearray\n" 
+            template += "    lsf.attributes.nodearray = {}\n".format(array) 
 
 template += """
 [parameters Required Settings]
@@ -288,30 +361,33 @@ if args.nfs:
         DefaultValue = /nfsdata
         Required = True
 """
+
 if args.anf:
-  template += """
-    [[parameters ANF Settings]]
+  for anf in args.anf:
+    template += """
+    [[parameters ANF {} Settings]]
     Order = 28
     Description = "Use a ANF server as a NAS. Settings for defining the ANF"
 
-        [[[parameter ANFServerName]]]
+        [[[parameter ANFServerName{}]]]
         Label = ANF Server name or IP address
         Description = The ANF server name or ip address.
         DefaultValue = 10.1.3.4
         Required = True
 
-        [[[parameter ANFExport]]]
+        [[[parameter ANFExport{}]]]
         Label = ANF Export
         Description = The export on the ANF.
         DefaultValue = /netappdata
         Required = True
 
-        [[[parameter ANFMountPoint]]]
+        [[[parameter ANFMountPoint{}]]]
         Label = ANF MountPoint
         Description = The mount point to mount the ANF file server on.
         DefaultValue = /netappdata
         Required = True
-"""
+""".format(anf,anf,anf,anf)
+
 if args.lustre:
   template += """
     [[parameters Lustre Settings]]
@@ -345,7 +421,57 @@ if args.scheduler == "slurm":
 	description = Version of Slurm to install on the cluster
 	defaultvalue = 17.11.12-1
   """
+if args.scheduler == "lsf":
+    template += """
+[parameters Schedulers]
+Order = 50
 
+   [[parameters LSF Settings]]
+   Order = 50
+   Description = "Settings specific to LSF"
+
+        [[[parameter LsfProjectVersion]]]
+        Label = Project Version
+        Description = CycleCloud LSF project version found in project.ini
+        DefaultValue = 2.1.0
+
+    [[parameters Master Nodes]]
+    Description = "Optional master Fail-over configuration"
+    Order = 30
+
+        [[[parameter MasterMachineType]]]
+        Label = Master Type
+        Description = The machine type for HA master array.
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_D2_v3
+
+        [[[parameter MasterNodeCountHA]]]
+        Label = Master Count
+        Description = Node count for HighAvailability Master
+        DefaultValue = 2
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 0
+        Config.MaxValue = 2
+        Config.IntegerOnly = true
+
+    [[[parameter MaxScalesetSize]]]
+        Label = Max VMs in VMSS
+        Description = Max number of VMs in a VMSS
+        DefaultValue = 40
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 1
+        Config.MaxValue = 1000
+        Config.IntegerOnly = true
+
+    [[[parameter MaxNumScalesets]]]
+        Label = Max VMSS count
+        Description = Max number of VMSS that the RC can allocate.
+        DefaultValue = 1
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 0
+        Config.MaxValue = 500
+        Config.IntegerOnly = true
+"""
 filename = '{}.txt'.format(args.name)
 f = open( filename, 'w' )
 f.write( template )
