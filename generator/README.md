@@ -9,10 +9,11 @@ For now the implemented functionality is:
 
 Example use:
 
-'''./make_template --name mycluster --scheduler pbspro --anf projects'''
+```./make_template --name mycluster --scheduler pbspro --anf projects```
+
 
 This will result in a template file mycluster.txt which can be imported using:
 
-'''cyclecloud import_template -f mycluster.txt'''
+```cyclecloud import_template -f mycluster.txt```
 
 The cluster above will have pbspro as its scheduler, have a single nodearray called execute and on the "External Filesystems" tab, you can specify the mount details for ANF.
