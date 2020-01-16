@@ -440,6 +440,7 @@ Order = 40
         Label = AD password
         Description = Password for user with rights to join computer to the domain.
         DefaultValue = "mypassword@1234"
+	ParameterType = Password
         Required = True
 
 [parameters ANF Settings]
