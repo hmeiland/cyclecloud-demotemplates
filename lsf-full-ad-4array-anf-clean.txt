@@ -1,0 +1,470 @@
+
+[cluster lsf]
+    FormLayout = selectionpanel
+    Category = Infrastructure
+    Autoscale = $Autoscale
+
+    [[node defaults]]
+
+        Credentials = $Credentials
+        Region = $Region
+        KeyPairLocation = ~/.ssh/cyclecloud.pem
+        ImageName = cycle.image.centos7
+        SubnetId = $ComputeSubnet
+
+        [[[configuration]]]
+
+        cyclecloud.mounts.sched.disabled = true
+        cyclecloud.mounts.shared.disabled = true
+        cyclecloud.maintenance_converge.enabled = false
+        cshared.server.legacy_links_disabled = true
+        cuser.base_home_dir = /shared/home
+
+        cyclecloud.exports.shared.samba.enabled = false
+        cyclecloud.exports.defaults.samba.enabled = false
+
+        lsf.lsf_top = $LSF_TOP  # /grid/lsf
+        lsf.lsf_logdir = ${LSF_TOP}/log
+        lsf.admin.home = /shared/home/lsfadmin
+        lsf.entitled_install = true 
+        lsf.shared_install = true
+
+        cyclecloud.selinux.policy = permissive
+
+	adjoin.ad_domain = $ad_domain 
+	adjoin.ad_server = $ad_server
+	adjoin.ad_admin = $ad_admin
+	adjoin.ad_password = $ad_password
+
+        [[[cluster-init lsf:default:$LsfProjectVersion]]]
+        [[[cluster-init cyclecloud-adjoin:adclient:1.0.0]]]
+
+    [[nodearray master]]
+        MachineType = $MasterMachineType
+        InitialCount = $MasterNodeCountHA
+        AdditionalClusterInitSpecs = $MasterClusterInitSpecs
+
+
+        [[[configuration]]]
+        run_list = recipe[cyclecloud],recipe[cshared::client],recipe[cuser],recipe[lsf::install],recipe[lsf::master]
+        cshared.server.shared_dir = /shared
+        cyclecloud.discoverable = true
+        lsf.num_placement_groups = $MaxNumScalesets
+
+        [[[configuration cyclecloud.mounts.sched-exp]]]
+        type = nfs
+        mountpoint = $LSF_TOP
+        export_path = $ANFExportLSF 
+        address = $ANFServerNameLSF
+
+        [[[configuration cyclecloud.mounts.home]]]
+        type = nfs
+        mountpoint = /shared/home
+        export_path = $ANFExportHome 
+        address = $ANFServerNameHome
+
+        [[[cluster-init lsf:master:$LsfProjectVersion]]]
+
+    [[nodearray ondemand]]
+        Priority = 500
+        Azure.MaxScalesetSize = $MaxScalesetSize
+        MachineType = $ExecuteMachineType
+        AdditionalClusterInitSpecs = $ExecuteClusterInitSpecs
+        Interruptible = False
+
+        MaxCoreCount = $MaxExecuteCoreCount
+
+        [[[configuration]]]
+        run_list = recipe[cyclecloud],recipe[cshared::client],recipe[cuser],recipe[lsf::worker]
+        cyclecloud.maintenance_converge.enabled = false
+        lsf.attribute_names = nodearray
+        lsf.attributes.nodearray = ondemand
+        lsf.autoscale = true
+
+        [[[configuration cyclecloud.mounts.sched-exp]]]
+        type = nfs
+        mountpoint = $LSF_TOP
+        export_path = $ANFExportLSF 
+        address = $ANFServerNameLSF
+
+        [[[configuration cyclecloud.mounts.home]]]
+        type = nfs
+        mountpoint = /shared/home
+        export_path = $ANFExportHome 
+        address = $ANFServerNameHome
+
+        [[[cluster-init lsf:execute:$LsfProjectVersion]]]
+        
+    [[nodearray ondemandmpi]]
+    	Priority = 450
+    	Extends = ondemand
+        PlacementGroupId = ondemandmpi-manual 
+        ImageName = $OndemandImageName
+
+        [[[configuration]]]
+        lsf.attribute_names = nodearray cyclecloudmpi placementgroup
+        lsf.attributes.nodearray = ondemandmpi
+        lsf.attributes.cyclecloudmpi = true
+        lsf.attributes.placementgroup = ondemandmpi-manual
+
+    [[nodearray hc-mpi]]
+    	Priority = 451
+    	Extends = ondemand
+        PlacementGroupId = hc-mpi-manual 
+        MachineType = "Standard_HC44rs" 
+        ImageName = cycle.image.centos7
+
+        [[[configuration]]]
+        lsf.attribute_names = nodearray cyclecloudmpi placementgroup
+        lsf.attributes.nodearray = hc-mpi
+        lsf.attributes.cyclecloudmpi = true
+        lsf.attributes.placementgroup = hc-mpi-manual
+
+    [[nodearray hb-mpi]]
+    	Priority = 452
+    	Extends = ondemand
+        PlacementGroupId = hb-mpi-manual 
+        MachineType = "Standard_HB60rs"
+        ImageName = cycle.image.centos7
+
+        [[[configuration]]]
+        lsf.attribute_names = nodearray cyclecloudmpi placementgroup
+        lsf.attributes.nodearray = hb-mpi
+        lsf.attributes.cyclecloudmpi = true
+        lsf.attributes.placementgroup = hb-mpi-manual
+
+    [[nodearray lowprio]]
+        Priority = 400
+        Extends = ondemand
+        Interruptible = True
+
+        [[[configuration]]]
+        lsf.attribute_names = nodearray cyclecloudlowprio
+        lsf.attributes.nodearray = lowprio
+        lsf.attributes.cyclecloudlowprio = true
+
+    [[nodearray gpu]]
+        Priority = 300
+        Extends = ondemand
+        ImageName = $GPUImageName
+        MachineType = $GPUMachineType
+        AdditionalClusterInitSpecs = $GPUClusterInitSpecs
+        [[[configuration]]]
+        lsf.ngpus = ${num_gpus_dict[GPUMachineType]}
+        lsf.attribute_names = nodearray
+        lsf.attributes.nodearray = gpu
+
+    [[nodearray gpumpi]]
+    	Extends = gpu
+    	Priority = 250
+        PlacementGroupId = gpumpi-manual 
+
+        [[[configuration]]]
+        lsf.attribute_names = nodearray cyclecloudmpi placementgroup
+        lsf.attributes.nodearray = gpu
+        lsf.attributes.cyclecloudmpi = true
+        lsf.attributes.placementgroup = gpumpi-manual
+
+[parameters About]
+Order = 1
+
+    [[parameters About LSF]]
+
+        [[[parameter LSF]]]
+        HideLabel = true
+        Config.Plugin = pico.widget.HtmlTemplateWidget
+        Config.Template := "IBM Spectrum LSF is a complete workload management solution for demanding HPC environments"
+
+        [[[parameter Readme]]]
+        HideLabel = true
+        Config.Plugin = pico.widget.HtmlTemplateWidget
+        Config.Template = "Follow the instructions in the <a href="https://github.com/Azure/cyclecloud-lsf" target=\"_blank\">README</a> for details on instructions on extending and configuring the Project for your environment."
+
+
+[parameters Required Settings]
+Order = 10
+
+    [[parameters Cloud Service Provider Configuration]]
+    Description = Configure the Cloud Provider account options.
+    Order = 10
+
+        [[[parameter Region]]]
+        Label = Region
+        Description = Deployment Location
+        ParameterType = Cloud.Region
+
+    [[parameters Compute Configurations]]
+    Description = "Configure the execute array for the cluster.  VM sizes and autoscaling limits."
+    Order = 20
+
+        [[[parameter ExecuteMachineType]]]
+        Label = Compute Type
+        Description = The machine type for execute nodes
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_D2s_v3 
+        Config.Multiselect = true
+
+        [[[parameter GPUMachineType]]]
+        Label = GPU Type
+        Description = The machine type for GPU nodes
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_NC12
+        Config.Multiselect = false
+
+        [[[parameter num_gpus_dict]]]
+        required = True
+        label = Lookup number of GPUs based on machine type.
+        parametertype = hidden
+            [[[[record DefaultValue]]]]
+            Standard_NC6 = 1
+            Standard_NC6s_v2 = 1
+            Standard_NC6s_v3 = 1
+            Standard_ND6s = 1
+            Standard_NV6 = 1
+
+            Standard_NC12 = 2
+            Standard_NC12s_v2 = 2
+            Standard_NC12s_v3 = 2
+            Standard_ND12s = 2
+            Standard_NV12 = 2
+
+            Standard_NC24 = 4
+            Standard_NC24r = 4
+            Standard_NC24rs_v2 = 4
+            Standard_NC24rs_v3 = 4
+            Standard_NC24s_v2 = 4
+            Standard_NC24s_v3 = 4
+            Standard_ND24rs = 4
+            Standard_ND24s = 4
+            Standard_NV24 = 4
+
+
+        [[[parameter Autoscale]]]
+        Label = Autoscale
+        DefaultValue = true
+        Widget.Plugin = pico.form.BooleanCheckBox
+        Widget.Label = Start and stop execute nodes automatically
+
+        [[[parameter MaxExecuteCoreCount]]]
+        Label = Max Cores
+        Description = The total number of execute cores to start
+        DefaultValue = 500
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 1
+        Config.MaxValue = 5000
+        Config.IntegerOnly = true
+
+
+    [[parameters Networking]]
+    Description = Networking settings
+    Order = 40
+
+        [[[parameter ComputeSubnet]]]
+        Label = Compute Subnet
+        Description = Subnet Resource Path (ResourceGroup/VirtualNetwork/Subnet)
+        Required = true
+        ParameterType = Azure.Subnet
+
+[parameters Advanced Settings]
+Order = 20
+
+    [[parameters Azure Settings]]
+    Description = Provider Account Name
+    Order = 10 
+
+        [[[parameter Credentials]]]
+        Description = The credentials for the cloud provider
+        ParameterType = Cloud.Credentials
+
+    [[ parameters Lsf Configuration ]]
+    Description = "The compute nodes should have LSF installed, set the location of the installation."
+    Order = 15
+
+        [[[parameter lsf_top]]]
+        Label = lsf_top
+        DefaultValue = "/grid/lsf"
+        Description = Location of LSF install on base image.
+
+    [[parameters Software]]
+    Description = "Specify the scheduling software, and base OS installed on all nodes, and optionally the cluster-init and chef versions from your Locker."
+    Order = 20
+
+        [[[parameter ImageName]]]
+        Label = Base OS
+        ParameterType = Cloud.Image
+        Config.OS = linux
+        DefaultValue = cycle.image.centos7
+        Config.Filter := Package in {"cycle.image.centos7"}
+
+        [[[parameter GPUImageName]]]
+        Label = GPU Base OS
+        ParameterType = Cloud.Image
+        Config.OS = linux
+        DefaultValue = cycle.image.centos7
+        Config.Filter := Package in {"cycle.image.centos7"}
+
+        [[[parameter OndemandImageName]]]
+        Label = Ondemand Base OS
+        ParameterType = Cloud.Image
+        Config.OS = linux
+        DefaultValue = cycle.image.centos7
+        Config.Filter := Package in {"cycle.image.centos7"}
+
+        [[[parameter MasterClusterInitSpecs]]]
+        Label = Master Cluster-Init
+        DefaultValue = =undefined
+        Description = Cluster init specs to apply to the master node
+        ParameterType = Cloud.ClusterInitSpecs
+    
+        [[[parameter ExecuteClusterInitSpecs]]]
+        Label = Execute Cluster-Init
+        DefaultValue = =undefined
+        Description = Cluster init specs to apply to non-GPU execute nodes
+        ParameterType = Cloud.ClusterInitSpecs
+
+        [[[parameter GPUClusterInitSpecs]]]
+        Label = GPU Cluster-Init
+        DefaultValue = =undefined
+        Description = Cluster init specs to apply to GPU nodes only
+        ParameterType = Cloud.ClusterInitSpecs
+
+        [[[parameter LsfProjectVersion]]]
+        Label = Project Version
+        Description = CycleCloud LSF project version found in project.ini
+        DefaultValue = 3.0.1
+
+    [[parameters Master Nodes]]
+    Description = "Optional master Fail-over configuration"
+    Order = 30
+
+        [[[parameter MasterMachineType]]]
+        Label = Master Type
+        Description = The machine type for HA master array.
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_D2_v3
+
+        [[[parameter MasterNodeCountHA]]]
+        Label = Master Count
+        Description = Node count for HighAvailability Master
+        DefaultValue = 2
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 0
+        Config.MaxValue = 2
+        Config.IntegerOnly = true
+
+    [[parameters Advanced Networking]]
+    Description = Advanced networking settings
+    Order = 35
+
+
+        [[[parameter AccessSubnet]]]
+        Label = Access Subnet
+        Required = false
+        ParameterType = Azure.Subnet
+        Description = Select access subnet or use default.
+
+        [[[parameter ReturnProxy]]]
+        Label = Return Proxy
+        DefaultValue = true
+        ParameterType = Boolean
+        Config.Label = Use SSH tunnel to connect to CycleCloud (required if direct access is blocked)
+
+    [[parameters Advanced Machines]]
+    Description = Additional machine configurations
+    Order = 40
+
+        [[[parameter FSMachineType]]]
+        Label = Fileserver Type
+        Description = The machine type for shared filer.
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_D4s_v3
+
+        [[[parameter ProjVolSize]]]
+        Label = Size (GB)
+        Description = FileServer Constituent RAID Volume Size (Count: 5)
+        DefaultValue = 200
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 20
+        Config.MaxValue = 4095
+        Config.IntegerOnly = true
+
+        [[[parameter ProxyMachineType]]]
+        Label = Proxy Type
+        Description = The machine type for proxy.
+        ParameterType = Cloud.MachineType
+        DefaultValue = Standard_D2_v3
+
+        [[[parameter MaxScalesetSize]]]
+        Label = Max VMs in VMSS
+        Description = Max number of VMs in a VMSS
+        DefaultValue = 40
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 1
+        Config.MaxValue = 1000
+        Config.IntegerOnly = true
+
+        [[[parameter MaxNumScalesets]]]
+        Label = Max VMSS count
+        Description = Max number of VMSS that the RC can allocate.
+        DefaultValue = 1
+        Config.Plugin = pico.form.NumberTextBox
+        Config.MinValue = 0
+        Config.MaxValue = 500
+        Config.IntegerOnly = true
+
+[parameters Active Directory]
+Order = 40
+
+    [[parameters AD Settings]]
+    Order = 10 
+
+        [[[parameter ad_domain]]]
+        Label = Active Directory Domain
+        Description = The Active Directory Domain name.
+        DefaultValue = MyDomain.local
+        Required = True
+
+        [[[parameter ad_server]]]
+        Label = Active Directory server
+        Description = The Active Directory server name.
+        DefaultValue = adnode
+        Required = True
+
+        [[[parameter ad_admin]]]
+        Label = AD User
+        Description = User with rights to join computer to the domain.
+        DefaultValue = hpcadmin
+        Required = True
+
+        [[[parameter ad_password]]]
+        Label = AD password
+        Description = Password for user with rights to join computer to the domain.
+        DefaultValue = "mypassword@1234"
+        Required = True
+
+[parameters ANF Settings]
+    Order = 50 
+    Description = "Use a ANF server as a NAS. Settings for defining the ANF"
+
+        [[parameter ANFServerNameLSF]]
+        Label = ANF IP address LSF
+        Description = The ANF server name or ip address.
+        DefaultValue = 10.1.3.4
+        Required = True
+
+        [[parameter ANFExportLSF]]
+        Label = ANF LSF Export
+        Description = The export on the ANF.
+        DefaultValue = /netappdata
+        Required = True
+
+        [[parameter ANFServerNameHome]]
+        Label = ANF IP address Home
+        Description = The ANF server name or ip address.
+        DefaultValue = 10.1.3.4
+        Required = True
+
+        [[parameter ANFExportHome]]
+        Label = ANF Home Export
+        Description = The export on the ANF.
+        DefaultValue = /netappdata
